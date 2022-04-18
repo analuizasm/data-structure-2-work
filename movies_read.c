@@ -17,12 +17,6 @@ typedef struct stFilm{
        genres[33];
 }tpFilm;
 
-typedef struct ltHead{
-    int tamanho_lista;
-    Lista* lista;
-}Head;
-
-
 void ordenar_arquivo(char *nome_arquivo, int *qtd_particoes);
 tpFilm encontrar_menor_registro(tpFilm* memoria, int tamanho, int *index_menor);
 void gravar_particao(FILE* particao, tpFilm *registro);
@@ -32,24 +26,31 @@ void gravar_memoria(FILE *particao, tpFilm *memoria, int tamanho);
 tpFilm* ordernar_memoria(tpFilm *memoria, int tam);
 void intercalacao_F3(char *particao1, char *particao2, char *particao_saida);
 void gerenciar_intercalacao(int *qtd_particoes);
-void ler_particoes(char* nome_arquivo);
+void imprimir_particao(char* nome_arquivo);
+void acesso_direto(char* nome_arquivo, char* originalTitle);
 
 
 int main (int ac, char **av){
-    FILE *arquivo_entrada = fopen("src/filmes/films.dat", "rb");
-    tpFilm film;
-    int qtd_particoes = 1;
-    assert(arquivo_entrada != NULL);
-    
-    int i = 1;
-    while ((fread(&film, sizeof(tpFilm), 1, arquivo_entrada) > 0)){
-        printf("%d - %s \n", i, film.originalTitle);
-        i++;
-    }//while (fread(&film, sizeof(tpFilm), 1, arquivo_entrada) > 0){
- 
-    ordenar_arquivo("src/filmes/films.dat", &qtd_particoes);  
-    gerenciar_intercalacao(&qtd_particoes);
-    fclose(arquivo_entrada);
+    if(strcmp(av[1], "classificacao") == 0 ){
+        FILE *arquivo_entrada = fopen("filmes/films.dat", "rb");
+        tpFilm film;
+        int qtd_particoes = 1;
+        assert(arquivo_entrada != NULL);
+        
+        int i = 1;
+        while ((fread(&film, sizeof(tpFilm), 1, arquivo_entrada) > 0)){
+            printf("%d - %s \n", i, film.originalTitle);
+            i++;
+        }//while (fread(&film, sizeof(tpFilm), 1, arquivo_entrada) > 0){
+
+        ordenar_arquivo("filmes/films.dat", &qtd_particoes);  
+        gerenciar_intercalacao(&qtd_particoes);
+        fclose(arquivo_entrada);
+    } else if(strcmp(av[1], "acesso_direto") == 0){
+
+        acesso_direto("acesso_direto/arquivo_ordenado.dat", av[2]);
+    }
+
     return 1;
 }
 
@@ -74,7 +75,7 @@ void ordenar_arquivo(char *nome_arquivo, int *qtd_particoes){
 
     fread(memoria, sizeof(tpFilm), M, arquivo);
     
-    sprintf(titulo_particao, "src/particoes/part-%.5d.dat", *qtd_particoes);
+    sprintf(titulo_particao, "part-%.5d.dat", *qtd_particoes);
  
     particao = fopen(titulo_particao, "wb");
     assert(particao != NULL);
@@ -98,8 +99,8 @@ void ordenar_arquivo(char *nome_arquivo, int *qtd_particoes){
             int aux = *qtd_particoes;
             aux++;
             *qtd_particoes = aux;
-            sprintf(titulo_particao, "src/particoes/part-%.5d.dat", *qtd_particoes);
-
+            sprintf(titulo_particao, "part-%.5d.dat", *qtd_particoes);
+            
             if(resultado == 2){
                 fflush(reservatorio);
 
@@ -269,6 +270,10 @@ void intercalacao_F3(char *particao1, char *particao2, char *particao_saida){
     }
     fclose(part1);
     fclose(part2);
+    
+    assert(remove(particao1) == 0); /*remover partições que já foram unidas para poupar espaço em disco */
+    assert(remove(particao2) == 0);
+
     fclose(saida);
 }
 
@@ -282,11 +287,9 @@ void gerenciar_intercalacao(int *qtd_particoes){
         char *titulo_particoes = (char*) malloc(sizeof(char)*M*2);
         
         for(int i = 1; i <= *qtd_particoes; i++){
-            sprintf(titulo_particoes, "src/particoes/part-%.5d.dat", i);
+            sprintf(titulo_particoes, "part-%.5d.dat", i);
             lista_particoes = lista_insere(lista_particoes, titulo_particoes, &tamanho_lista);
         }
-
-        Lista* p = lista_particoes;
 
         Lista *p = lista_particoes;
 
@@ -294,7 +297,7 @@ void gerenciar_intercalacao(int *qtd_particoes){
         
         int qtd_merges = 0;
         while((tamanho_lista) > 1){
-            sprintf(titulo_saida, "part_saida-%.5d.dat", ++qtd_particoes_saida);
+            sprintf(titulo_saida, "merge-%.5d.dat", ++qtd_particoes_saida);
 
             printf("Fazendo merge entre %s e %s\n..", p->nomeParticao, p->prox->nomeParticao);
 
@@ -303,36 +306,80 @@ void gerenciar_intercalacao(int *qtd_particoes){
             lista_particoes = lista_insere(lista_particoes, titulo_saida, &tamanho_lista);
             tamanho_lista -=2;
             p = p->prox->prox;
+            lista_particoes = remove_inicio(lista_particoes);
+            lista_particoes = remove_inicio(lista_particoes);
         }
-       
         printf("-------------------------------------------------------");
         printf("Part final = %s \n Quantidade de merges realizados: %d", titulo_saida, qtd_merges);
         printf("---------------------------------------------------------");
+        
+        libera_lst(lista_particoes);
 
-        // tpFilm film;
-        // FILE *saida = fopen(titulo_saida, "rb");
-        // assert(saida != NULL);
-
-        // i = 1;
-        // while (fread(&film, sizeof(tpFilm), 1, saida) > 0){
-        //     printf("%d - %s \n", i,  film.originalTitle);
-        //     i++;
-        // }//while (fread(&film, sizeof(tpFilm), 1, arquivo_entrada) > 0){
+        imprimir_particao(titulo_saida);
     }
 }
 
-
-void ler_particoes(char *nome_arquivo){
-    FILE *arquivo_entrada = NULL;
+void imprimir_particao(char *nome_arquivo){
+    printf("Lendo saida...");
+    FILE *particao = NULL;
     tpFilm film;
-    arquivo_entrada = fopen(nome_arquivo, "rb");
-    assert(arquivo_entrada != NULL);
+    particao = fopen(nome_arquivo, "rb");
+    assert(particao != NULL);
 
-    int i = 0;
+    int i = 1;
 
-    while ((fread(&film, sizeof(tpFilm), 1, arquivo_entrada) > 0)){
+    while ((fread(&film, sizeof(tpFilm), 1, particao) > 0)){
         printf("%d - %s \n", i, film.originalTitle);
         i++;
-    }//while (fread(&film, sizeof(tpFilm), 1, arquivo_entrada) > 0){
-    fclose(arquivo_entrada);
+    }//while (fread(&film, sizeof(tpFilm), 1, particao) > 0){
+    fclose(particao);
 }
+
+void acesso_direto(char* nome_arquivo, char* originalTitle){
+    unsigned long int tam_estrutura      = sizeof(tpFilm);
+    unsigned long int tam_arquivo        = 0;
+    unsigned long int total_registros    = 0;
+    unsigned long int posicao_no_arquivo;
+    int achou = 0;
+    tpFilm film; 
+    
+    FILE *arquivo = fopen(nome_arquivo, "rb");
+    assert(arquivo != NULL);
+    
+    fseek(arquivo, 0, SEEK_END); 
+    tam_arquivo = ftell(arquivo); 
+    fseek(arquivo, 0, SEEK_SET); 
+
+    total_registros = tam_arquivo / tam_estrutura;
+
+    printf("Iniciando busca\n");
+
+    unsigned long int inicio = 0;
+    unsigned long int fim = total_registros - 1;
+    unsigned long int meio = 0;
+    
+    while(inicio <= fim && !achou){
+        meio = (inicio + fim)/2;
+        fseek(arquivo, sizeof(tpFilm) * meio, SEEK_SET);
+
+        assert(fread(&film, sizeof(tpFilm), 1, arquivo) == 1);
+
+        if(strcmp(film.originalTitle, originalTitle) == 0){
+            achou = 1;
+        } else if(strcmp(film.originalTitle, originalTitle) < 0){
+            inicio = meio + 1;
+        } else {
+            fim = meio - 1;
+        }
+    }
+
+    if(achou == 0){
+        printf("Não foi possível encontrar o registro!\n");
+    } else {
+        printf("%s | %s | %s | %c | %d | %d | %s | %s \n", film.titleType, film.primaryTitle, film.originalTitle, film.isAdult, film.startYear, film.endYear, film.runtimeMinutes, film.genres);
+    }
+    fseek(arquivo, 0, SEEK_SET);
+    
+    fclose(arquivo);
+}
+
